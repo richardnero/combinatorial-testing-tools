@@ -1,2 +1,2 @@
 # combinatorial-testing-tools
-Tools for combinatorial testing developed by the NIST ACTS project converted to python
+Tools for combinatorial testing developed by the @usnistgov ACTS project converted to python
