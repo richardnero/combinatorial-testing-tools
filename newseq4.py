@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 4-Way Sequence Covering Array Generator
-Mathematically equivalent to NIST newseq4.c implementation
+Fixed version with proper candidate generation
 
-Usage: python newseq4.py <number_of_events>
+Usage: python newseq4_fixed.py <number_of_events>
 """
 
 import sys
@@ -12,14 +12,14 @@ import time
 
 
 class NewSeq4Generator:
-    """4-way sequence covering array generator - NIST C equivalent"""
+    """4-way sequence covering array generator - NIST C equivalent with fixed candidates"""
     
     def __init__(self, n_events):
         # NIST C variable naming convention
         self.N = n_events
         self.NSEQ = n_events * (n_events - 1) * (n_events - 2) * (n_events - 3)
         self.MAXT = 10000
-        self.NTRIALS = 100
+        self.NTRIALS = 1000  # Match NIST C exactly
         
         # Initialize data structures matching NIST C
         # chk[N][N][N][N] equivalent using dictionary
@@ -33,6 +33,9 @@ class NewSeq4Generator:
         
         # Statistics matching NIST C
         self.nt = 0  # number of tests generated
+        
+        # Reversal logic matching NIST C
+        self.reversal = 1 if n_events > 5 else 0
         
         # Random seed matching NIST C approach
         random.seed(int(time.time()))
@@ -54,15 +57,6 @@ class NewSeq4Generator:
             return False
         for i in range(length):
             if i < len(self.test[test_idx]) and self.test[test_idx][i] == digit:
-                return True
-        return False
-    
-    def tmpused(self, test_idx, digit, length):
-        """Check if digit is already used in tmptest up to given length - NIST C equivalent"""
-        if test_idx >= len(self.tmptest):
-            return False
-        for i in range(length):
-            if i < len(self.tmptest[test_idx]) and self.tmptest[test_idx][i] == digit:
                 return True
         return False
     
@@ -91,20 +85,43 @@ class NewSeq4Generator:
     
     def allcovered(self):
         """Check if all sequences are covered - NIST C equivalent"""
-        cnt = sum(1 for value in self.chk.values() if value == 1)
+        cnt = 0
+        for i in range(self.N):
+            for j in range(self.N):
+                for k in range(self.N):
+                    for l in range(self.N):
+                        if (i != j and i != k and i != l and j != k and j != l and k != l and 
+                            (i, j, k, l) in self.chk and self.chk[(i, j, k, l)] == 1):
+                            cnt += 1
+        
         remaining = self.NSEQ - cnt
         expected = remaining / 24.0  # 4! = 24 for 4-way
         print(f"--- covered {cnt}. -- remain {remaining}. -- expect {expected:.1f}")
+        
         return cnt >= self.NSEQ
     
+    def generate_valid_candidate(self):
+        """Generate a valid permutation candidate (fixed version)"""
+        # Start with a valid permutation
+        candidate = list(range(self.N))
+        
+        # Fisher-Yates shuffle to create random permutation
+        for i in range(self.N):
+            j = random.randint(i, self.N - 1)
+            candidate[i], candidate[j] = candidate[j], candidate[i]
+        
+        return candidate
+    
     def generate(self):
-        """Main generation algorithm - exact NIST C structure"""
+        """Main generation algorithm - NIST C structure with fixed candidate generation"""
         print(f"Generating test sequences for {self.N} events")
         
-        # Initialize with first test exactly like NIST C: test[0][i] = i
-        initial_test = list(range(self.N))
-        self.test = [initial_test]
-        self.nt = 1
+        # Initialize with TWO tests exactly like NIST C
+        # test[0][i] = i; test[1][i] = N-1-i; nt=2;
+        test0 = list(range(self.N))                    # [0,1,2,3,4]
+        test1 = [self.N-1-i for i in range(self.N)]   # [4,3,2,1,0]
+        self.test = [test0, test1]
+        self.nt = 2
         
         # Analyze initial coverage
         self.analyze(self.nt)
@@ -112,19 +129,11 @@ class NewSeq4Generator:
         # Main generation loop matching NIST C: while (!allcovered() && nt < MAXT)
         while not self.allcovered() and self.nt < self.MAXT:
             
-            # Generate NTRIALS candidates exactly like NIST C
+            # Generate NTRIALS candidates - FIXED to ensure valid permutations
             self.tmptest = []
             for i in range(self.NTRIALS):
-                candidate = [0] * self.N
-                
-                # Generate candidate exactly like NIST C logic
-                candidate[0] = random.randint(0, self.N - 1)
-                for j in range(1, self.N):
-                    n = random.randint(0, self.N - 1)
-                    while self.tmpused(i, n, j):
-                        n = random.randint(0, self.N - 1)
-                    candidate[j] = n
-                
+                # Generate valid permutation candidate
+                candidate = self.generate_valid_candidate()
                 self.tmptest.append(candidate)
             
             # Find best candidate using NIST C greedy selection
@@ -138,8 +147,13 @@ class NewSeq4Generator:
                     for j in range(i + 1, self.N - 2):
                         for k in range(j + 1, self.N - 1):
                             for l in range(k + 1, self.N):
-                                seq = (self.tmptest[m][i], self.tmptest[m][j], self.tmptest[m][k], self.tmptest[m][l])
-                                if seq in self.chk and self.chk[seq] == 0:
+                                i1 = self.tmptest[m][i]
+                                j1 = self.tmptest[m][j] 
+                                k1 = self.tmptest[m][k]
+                                l1 = self.tmptest[m][l]
+                                # Match NIST C condition exactly
+                                if ((i1, j1, k1, l1) in self.chk and self.chk[(i1, j1, k1, l1)] == 0 and 
+                                    i != j and i != k and i != l and j != k and j != l and k != l):
                                     cnt += 1
                 
                 if cnt > bestcov:
@@ -152,6 +166,14 @@ class NewSeq4Generator:
                 self.test.append(best_test)
                 self.nt += 1
                 self.analyze(self.nt)
+                
+                # Add reversal logic exactly like NIST C
+                if self.reversal:
+                    # Create reversed test: test[nt][i] = test[nt-1][N-1-i]
+                    reversed_test = [best_test[self.N-1-i] for i in range(self.N)]
+                    self.test.append(reversed_test)
+                    self.nt += 1
+                    self.analyze(self.nt)
             else:
                 # No improvement possible, break like NIST C would
                 break
@@ -162,15 +184,27 @@ class NewSeq4Generator:
         """Print results in exact NIST C format"""
         print(f"==== {self.nt} TESTS ====")
         
+        # Print to stderr like NIST C: fprintf(stderr,"%d,", test[m][j]);
+        import sys
         for m in range(self.nt):
             if m < len(self.test):
-                sequence_str = ",".join(str(x) for x in self.test[m])
-                print(f"{sequence_str},")
+                for j in range(self.N):
+                    sys.stderr.write(f"{self.test[m][j]},")
+                sys.stderr.write("\n")
         
-        # Final statistics in exact NIST C format
-        cnt = sum(1 for value in self.chk.values() if value == 1)
+        # Final statistics exactly like NIST C
+        cnt = 0
+        for i in range(self.N):
+            for j in range(self.N):
+                for k in range(self.N):
+                    for l in range(self.N):
+                        if (i != j and i != k and i != l and j != k and j != l and k != l and 
+                            (i, j, k, l) in self.chk and self.chk[(i, j, k, l)] == 1):
+                            cnt += 1
+        
         coverage_ratio = cnt / self.NSEQ if self.NSEQ > 0 else 0
         print(f"Tests: {self.nt}. Seqs covered: {cnt}/NSEQ: {self.NSEQ} = {coverage_ratio:.6f}")
+        sys.stderr.flush()  # Ensure stderr output is flushed
 
 
 def main():
